@@ -8,7 +8,7 @@ import { diffWords } from "diff";
 
 
 /**
- * 🧠 Analyze Essay using YOUR ML MODELS (FastAPI)
+ * 🧠 Analyze Essay using OUR ML MODELS (FastAPI)
  */
 export const analyzeEssayML = async (req, res) => {
   try {
@@ -36,7 +36,7 @@ export const analyzeEssayML = async (req, res) => {
     }
 
     /* =========================
-       ✅ 1️⃣ Sentence splitting
+      ✅ 1️⃣ Sentence splitting
     ========================== */
     const sentences = split(text)
       .filter(n => n.type === "Sentence")
@@ -96,6 +96,8 @@ export const analyzeEssayML = async (req, res) => {
       "http://127.0.0.1:8000/tone",
       { text: correctedText }
     );
+
+    console.log("Tone detection result:", toneRes);
 
     /* =========================
        ✅ 4️⃣ Score prediction

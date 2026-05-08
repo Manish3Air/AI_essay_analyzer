@@ -129,3 +129,7 @@ def analyze(payload: TextIn):
         "tone": tone(payload),
         "score": score(payload),
     }
+
+@app.get("/")
+def home():
+    return {"message": "Essay Analyzer ML Service Running"}    
