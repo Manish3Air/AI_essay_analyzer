@@ -1,10 +1,9 @@
 // EssayUpload.jsx
 import React, { useEffect, useState, useRef } from "react";
-import axios from "axios";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { motion } from "framer-motion";
-import { api } from "../services/api"; 
+import api  from "../services/api"; 
 
 // Utility: escape regex for safe replacements
 function escapeRegExp(string) {
