@@ -4,6 +4,7 @@ import axios from "axios";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { motion } from "framer-motion";
+import { api } from "../services/api"; 
 
 // Utility: escape regex for safe replacements
 function escapeRegExp(string) {
@@ -103,7 +104,7 @@ export default function EssayUpload() {
     setLoading(true);
     setAnalysis(null);
     try {
-      const res = await axios.post("/api/essay/analyze-ml", fd, {
+      const res = await api.post("/api/essay/analyze-ml", fd, {
         headers: { "Content-Type": "multipart/form-data" },
         timeout: 180000,
       });
@@ -133,7 +134,7 @@ export default function EssayUpload() {
     setLoading(true);
     setAnalysis(null);
     try {
-      const res = await axios.post(
+      const res = await api.post(
         "/api/essay/analyze-ml",
         { text: textInput, userId: "student_demo" },
         { timeout: 180000 }
@@ -194,7 +195,7 @@ export default function EssayUpload() {
   const persistAnnotation = async (essayIdLocal, index, accepted) => {
     if (!essayIdLocal) return;
     try {
-      await axios.post("/api/essay/annotation-feedback", {
+      await api.post("/api/essay/annotation-feedback", {
         essayId: essayIdLocal,
         annotationIndex: index,
         accepted,
