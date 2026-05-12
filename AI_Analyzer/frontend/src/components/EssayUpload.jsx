@@ -556,7 +556,7 @@ export default function EssayUpload() {
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="grid grid-cols-12 gap-6">
-        <div className="col-span-7">
+        <div className="col-span-12 lg:col-span-7">
           <div className="card p-4 mb-4">
             <form onSubmit={analyzeUpload} className="space-y-3">
               <label className="block text-sm font-medium">Upload PDF</label>
@@ -718,7 +718,7 @@ export default function EssayUpload() {
           )}
         </div>
 
-        <aside className="col-span-5 space-y-4">
+        <aside className="col-span-12 lg:col-span-5 space-y-4">
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -772,13 +772,13 @@ export default function EssayUpload() {
       </div>
 
       <style>{`
-        .card{background:var(--card, rgba(255,255,255,0.03));padding:16px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.08)}
-        .primary{background:linear-gradient(90deg,#7c3aed,#4f46e5);color:white;padding:8px 12px;border-radius:8px;border:none}
+        .card{background:var(--surface);border:1px solid var(--border);padding:16px;border-radius:10px;box-shadow:var(--shadow)}
+        .primary{background:var(--accent);color:white;padding:8px 12px;border-radius:8px;border:none}
         .secondary{
-        background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px
+        background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 12px;border-radius:8px
         }
-        .secondary:hover{background:rgba(255,255,255,0.02)}
-        .btn-ghost{background:transparent;border:1px dashed rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px}
+        .secondary:hover{background:var(--surface-muted);color:var(--text)}
+        .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 10px;border-radius:8px}
         .btn-accept{background:#10b981;color:white;padding:6px 8px;border-radius:8px;border:none}
         .btn-reject{background:#ef4444;color:white;padding:6px 8px;border-radius:8px;border:none}
         .btn-reset{background:#f3f4f6;color:#111;padding:6px 8px;border-radius:8px;border:none}

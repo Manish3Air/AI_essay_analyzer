@@ -1,65 +1,65 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import EssayUpload from "./components/EssayUpload";
 import EssayHistoryDashboard from "./components/EssayHistoryDashboard";
 
+const getInitialTheme = () => localStorage.getItem("ai-analyzer-theme") || "auto";
+
 export default function App() {
-  const [theme, setTheme] = useState("auto");
+  const [theme, setTheme] = useState(getInitialTheme);
   const [view, setView] = useState("analyzer");
 
-  // handle theme preference
   useEffect(() => {
-    const prefersDark =
-      window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (theme === "auto")
-      document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
-    else document.documentElement.dataset.theme = theme;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      document.documentElement.dataset.theme =
+        theme === "auto" ? (mediaQuery.matches ? "dark" : "light") : theme;
+    };
+
+    localStorage.setItem("ai-analyzer-theme", theme);
+    applyTheme();
+
+    if (theme !== "auto") return undefined;
+    mediaQuery.addEventListener("change", applyTheme);
+    return () => mediaQuery.removeEventListener("change", applyTheme);
   }, [theme]);
 
   return (
-    <div className="app min-h-screen flex flex-col bg-gray-950 text-gray-100">
-      {/* Header */}
-      <header className="header bg-gray-900 border-b border-gray-800 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">🧠 AI Essay Analyzer</h1>
-          <p className="subtitle text-gray-400 text-sm">
-            Upload PDF → AI corrections, inline highlights, suggestions & downloadable report.
-          </p>
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="brand-block">
+          <span className="brand-mark">AI</span>
+          <div>
+            <h1>Essay Analyzer</h1>
+            <p className="subtitle">
+              Review grammar, clarity, readability, tone, and long-term writing
+              progress.
+            </p>
+          </div>
         </div>
 
-        <div className="controls flex items-center gap-4 mt-3 sm:mt-0">
-          {/* View toggle */}
-          <div className="flex gap-2">
+        <div className="app-controls">
+          <div className="segmented-control" aria-label="Primary view">
             <button
+              type="button"
+              aria-pressed={view === "analyzer"}
+              className={view === "analyzer" ? "is-active" : ""}
               onClick={() => setView("analyzer")}
-              className={`px-3 py-1.5 rounded-lg text-sm ${
-                view === "analyzer"
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-800 hover:bg-gray-700"
-              }`}
             >
               Analyzer
             </button>
             <button
+              type="button"
+              aria-pressed={view === "history"}
+              className={view === "history" ? "is-active" : ""}
               onClick={() => setView("history")}
-              className={`px-3 py-1.5 rounded-lg text-sm ${
-                view === "history"
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-800 hover:bg-gray-700"
-              }`}
             >
               History
             </button>
           </div>
 
-          {/* Theme selector */}
-          <label className="text-sm flex items-center gap-2">
-            Theme:
-            <select
-              onChange={(e) => setTheme(e.target.value)}
-              defaultValue="auto"
-              className="bg-gray-800 text-gray-200 rounded px-2 py-1"
-            >
+          <label className="theme-picker">
+            <span>Theme</span>
+            <select value={theme} onChange={(e) => setTheme(e.target.value)}>
               <option value="auto">Auto</option>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
@@ -68,14 +68,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 p-6">
+      <main className="app-main">
         {view === "analyzer" ? <EssayUpload /> : <EssayHistoryDashboard />}
       </main>
 
-      {/* Footer */}
-      <footer className="footer text-center py-3 text-gray-500 text-sm border-t border-gray-800">
-        v3 • Includes highlights, animated score meter, styled PDF export & history tracking
+      <footer className="app-footer">
+        v3 includes inline highlights, score analytics, PDF export, and history
+        tracking.
       </footer>
     </div>
   );

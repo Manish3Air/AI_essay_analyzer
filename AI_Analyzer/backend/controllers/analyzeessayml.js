@@ -3,8 +3,83 @@ import { extractTextFromPDF } from "../utils/pdfExtractor.js";
 import axios from "axios";
 import fs from "fs";
 import { split } from "sentence-splitter";
+import Groq from "groq-sdk";
 
 import { diffWords } from "diff";
+
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+
+function fallbackTitle(text) {
+  const firstSentence =
+    text
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(/(?<=[.?!])\s+/)[0] || "Untitled Essay";
+  const words = firstSentence
+    .replace(/[^\w\s'-]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 7);
+
+  return words.length ? words.join(" ") : "Untitled Essay";
+}
+
+async function generateEssayTitle(text, fallback = "Untitled Essay") {
+  if (!text?.trim()) return fallback;
+  if (!groq) return fallbackTitle(text);
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Create a concise essay title. Return only the title, no quotes, no punctuation at the end.",
+        },
+        {
+          role: "user",
+          content: text.slice(0, 2500),
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 16,
+    });
+
+    const title = completion?.choices?.[0]?.message?.content
+      ?.replace(/^["']|["']$/g, "")
+      ?.trim();
+
+    return title || fallbackTitle(text);
+  } catch (err) {
+    console.error("Groq title generation failed:", err.message);
+    return fallbackTitle(text) || fallback;
+  }
+}
+
+function calculateReadability(text) {
+  const words = text
+    .replace(/\n+/g, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\w'-]/g, ""))
+    .filter(Boolean);
+  const sentences = text
+    .replace(/\n+/g, " ")
+    .split(/(?<=[.?!])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  if (!words.length || !sentences.length) return 0;
+
+  const averageSentenceLength = words.length / sentences.length;
+  const longWordRatio =
+    words.filter((word) => word.length >= 7).length / words.length;
+  const score = 100 - averageSentenceLength * 1.8 - longWordRatio * 45;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
 
 
 /**
@@ -26,7 +101,7 @@ export const analyzeEssayML = async (req, res) => {
       });
     } else if (req.body.text) {
       text = req.body.text;
-      title = "Text Input Essay";
+      title = req.body.title || "Text Input Essay";
     } else {
       return res.status(400).json({ error: "No essay text or file provided." });
     }
@@ -34,6 +109,8 @@ export const analyzeEssayML = async (req, res) => {
     if (!text.trim()) {
       return res.status(400).json({ error: "Essay text is empty." });
     }
+
+    title = await generateEssayTitle(text, title);
 
     /* =========================
       ✅ 1️⃣ Sentence splitting
@@ -118,7 +195,7 @@ export const analyzeEssayML = async (req, res) => {
       grammar_issues: grammarIssues,
       suggestions: [],
       score: Number(scoreRes.data.score) || 0,
-      readability: "Model-based",
+      readability: String(calculateReadability(correctedText)),
       tone: toneRes.data.tone || "Neutral",
       createdAt: new Date(),
     });

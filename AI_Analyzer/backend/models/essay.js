@@ -101,7 +101,7 @@ const essaySchema = new mongoose.Schema({
   },
 });
 
-// ✅ Optional: Auto-clean string annotations (in case OpenAI returns strings)
+// ✅ Optional: Auto-clean string annotations (in case an AI provider returns strings)
 essaySchema.pre("validate", function (next) {
   if (Array.isArray(this.annotations)) {
     this.annotations = this.annotations.map((a) =>

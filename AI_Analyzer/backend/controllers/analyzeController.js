@@ -2,13 +2,82 @@ import dotenv from "dotenv";
 dotenv.config();
 import Essay from "../models/essay.js";
 import { extractTextFromPDF } from "../utils/pdfExtractor.js";
-import OpenAI from "openai";
 import fs from "fs";
+import Groq from "groq-sdk";
 
-// ✅ Initialize OpenAI Client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+
+function fallbackTitle(text) {
+  const firstSentence =
+    text
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(/(?<=[.?!])\s+/)[0] || "Untitled Essay";
+  const words = firstSentence
+    .replace(/[^\w\s'-]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 7);
+
+  return words.length ? words.join(" ") : "Untitled Essay";
+}
+
+async function generateEssayTitle(text, fallback = "Untitled Essay") {
+  if (!text?.trim()) return fallback;
+  if (!groq) return fallbackTitle(text);
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Create a concise essay title. Return only the title, no quotes, no punctuation at the end.",
+        },
+        {
+          role: "user",
+          content: text.slice(0, 2500),
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 16,
+    });
+
+    const title = completion?.choices?.[0]?.message?.content
+      ?.replace(/^["']|["']$/g, "")
+      ?.trim();
+
+    return title || fallbackTitle(text);
+  } catch (err) {
+    console.error("Groq title generation failed:", err.message);
+    return fallbackTitle(text) || fallback;
+  }
+}
+
+function extractJsonObject(content) {
+  if (!content) return null;
+  const cleaned = content
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    }
+    throw new Error("Failed to parse JSON from Groq response");
+  }
+}
 
 /**
  * 🧠 Analyze Essay
@@ -31,7 +100,7 @@ export const analyzeEssay = async (req, res) => {
       });
     } else if (req.body.text) {
       text = req.body.text;
-      title = "Text Input Essay";
+      title = req.body.title || "Text Input Essay";
     } else {
       return res.status(400).json({ error: "No essay text or file provided." });
     }
@@ -40,31 +109,57 @@ export const analyzeEssay = async (req, res) => {
       return res.status(400).json({ error: "Essay text is empty." });
     }
 
+    title = await generateEssayTitle(text, title);
+
+    if (!groq) {
+      return res.status(500).json({
+        error: "Groq API key missing.",
+        details: "Set GROQ_API_KEY in the backend environment.",
+      });
+    }
+
     // ✅ Prompt for structured analysis
     const prompt = `Analyze this essay for grammar, structure, and readability.
     Provide corrections, suggestions, a score (out of 10), and tone.
-    Return structured JSON with the following keys:
-    corrected_text, annotations[], grammar_issues[], suggestions[], score, readability, tone.
+    Return ONLY valid JSON with these keys:
+    {
+      "corrected_text": "",
+      "annotations": [
+        { "type": "correction", "original": "", "corrected": "", "note": "" }
+      ],
+      "grammar_issues": [],
+      "suggestions": [],
+      "score": 0,
+      "readability": "",
+      "tone": ""
+    }
     Essay:\n\n${text}`;
 
-    // ✅ OpenAI API request
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
+    // ✅ Groq API request
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an essay analysis API. Return only valid JSON. Do not use markdown.",
+        },
+        { role: "user", content: prompt },
+      ],
       response_format: { type: "json_object" },
       temperature: 0.7,
     });
 
     // ✅ Validate and parse response
     const content = completion?.choices?.[0]?.message?.content;
-    if (!content) throw new Error("Invalid OpenAI response content");
+    if (!content) throw new Error("Invalid Groq response content");
 
     let data;
     try {
-      data = JSON.parse(content);
+      data = extractJsonObject(content);
     } catch (parseErr) {
       console.error("❌ JSON Parse Error:", content);
-      throw new Error("Failed to parse JSON from OpenAI response");
+      throw parseErr;
     }
 
     // ✅ Normalize annotations (convert strings → objects)
@@ -144,14 +239,44 @@ export const saveAnnotationFeedback = async (req, res) => {
  */
 export const getEssayHistory = async (req, res) => {
   try {
-    const essays = await Essay.find({}, "title score createdAt")
+    const essays = await Essay.find(
+      {},
+      "title raw_text corrected_text annotations grammar_issues suggestions score readability tone createdAt"
+    )
       .sort({ createdAt: -1 })
-      .limit(10);
+      .limit(50);
     return res.json(essays);
   } catch (err) {
     console.error("❌ History fetch error:", err);
     return res.status(500).json({
       error: "Failed to fetch history.",
+      details: err.message,
+    });
+  }
+};
+
+export const deleteEssay = async (req, res) => {
+  try {
+    const deleted = await Essay.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Essay not found." });
+    return res.json({ success: true, id: req.params.id });
+  } catch (err) {
+    console.error("❌ Delete essay error:", err);
+    return res.status(500).json({
+      error: "Failed to delete essay.",
+      details: err.message,
+    });
+  }
+};
+
+export const clearEssayHistory = async (req, res) => {
+  try {
+    const result = await Essay.deleteMany({});
+    return res.json({ success: true, deletedCount: result.deletedCount || 0 });
+  } catch (err) {
+    console.error("❌ Clear history error:", err);
+    return res.status(500).json({
+      error: "Failed to clear essay history.",
       details: err.message,
     });
   }
