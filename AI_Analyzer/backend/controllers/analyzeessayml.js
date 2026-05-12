@@ -87,77 +87,109 @@ function calculateReadability(text) {
  */
 export const analyzeEssayML = async (req, res) => {
   try {
+
+    const ML_API =
+      process.env.FAST_API_URL || "http://127.0.0.1:8000";
+
     let text = "";
     let title = "Untitled Essay";
 
-    // ✅ Handle both file upload and text input
+
     if (req.file) {
+
       const pdfFile = req.file;
+
       title = pdfFile.originalname;
+
       text = await extractTextFromPDF(pdfFile.path);
 
       fs.unlink(pdfFile.path, (err) => {
-        if (err) console.error("Temp file cleanup error:", err);
+        if (err) {
+          console.error("Temp file cleanup error:", err);
+        }
       });
+
     } else if (req.body.text) {
+
       text = req.body.text;
+
       title = req.body.title || "Text Input Essay";
+
     } else {
-      return res.status(400).json({ error: "No essay text or file provided." });
+
+      return res.status(400).json({
+        error: "No essay text or file provided.",
+      });
     }
 
+
     if (!text.trim()) {
-      return res.status(400).json({ error: "Essay text is empty." });
+
+      return res.status(400).json({
+        error: "Essay text is empty.",
+      });
     }
 
     title = await generateEssayTitle(text, title);
 
-    /* =========================
-      ✅ 1️⃣ Sentence splitting
-    ========================== */
     const sentences = split(text)
-      .filter(n => n.type === "Sentence")
-      .map(n => n.raw.trim())
-      .filter(s => s.length > 2);
+      .filter((n) => n.type === "Sentence")
+      .map((n) => n.raw.trim())
+      .filter((s) => s.length > 2);
+
+
+    // Grammar Diff Builder
 
     function buildGrammarIssues(original, corrected) {
+
       const diffs = diffWords(original, corrected);
 
       return diffs
-        .filter(part => part.added || part.removed)
-        .map(part => ({
+        .filter((part) => part.added || part.removed)
+        .map((part) => ({
           type: part.added ? "addition" : "removal",
           text: part.value,
         }));
     }
 
 
-    /* =========================
-       ✅ 2️⃣ Grammar correction
-    ========================== */
+    // Grammar Correction
+
     const grammarIssues = [];
+
     const correctedSentences = [];
 
     for (const sentence of sentences) {
+
       const r = await axios.post(
-        "http://127.0.0.1:8000/grammar",
-        { text: sentence }
+        `${ML_API}/grammar`,
+        { text: sentence },
+        {
+          timeout: 180000,
+        }
       );
 
-      const corrected = r.data.corrected_text || sentence;
+      const corrected =
+        r.data.corrected_text || sentence;
+
       correctedSentences.push(corrected);
 
       if (corrected !== sentence) {
+
         grammarIssues.push({
-          sentence: sentence,
+          sentence,
           corrected,
-          issues: buildGrammarIssues(sentence, corrected),
+          issues: buildGrammarIssues(
+            sentence,
+            corrected
+          ),
         });
       }
     }
 
-    // console.log(grammarIssues);
-
+    
+    // ✅ Final Corrected Essay
+    
     const correctedText = correctedSentences
       .join(" ")
       .replace(/\s*\.\s*/g, ". ")
@@ -165,48 +197,75 @@ export const analyzeEssayML = async (req, res) => {
       .replace(/\s+/g, " ")
       .trim();
 
-
-    /* =========================
-       ✅ 3️⃣ Tone detection
-    ========================== */
+    
+    // ✅ Tone Detection
+    
     const toneRes = await axios.post(
-      "http://127.0.0.1:8000/tone",
-      { text: correctedText }
+      `${ML_API}/tone`,
+      {
+        text: correctedText,
+      },
+      {
+        timeout: 180000,
+      }
     );
 
-    console.log("Tone detection result:", toneRes);
-
-    /* =========================
-       ✅ 4️⃣ Score prediction
-    ========================== */
+    
+    // ✅ Score Prediction
+    
     const scoreRes = await axios.post(
-      "http://127.0.0.1:8000/score",
-      { text: correctedText }
+      `${ML_API}/score`,
+      {
+        text: correctedText,
+      },
+      {
+        timeout: 180000,
+      }
     );
 
-    /* =========================
-       ✅ 5️⃣ Save to DB
-    ========================== */
+    
+    // ✅ Save To MongoDB
+    
     const essayDoc = new Essay({
+
       title,
+
       raw_text: text,
+
       corrected_text: correctedText,
+
       annotations: [],
+
       grammar_issues: grammarIssues,
+
       suggestions: [],
+
       score: Number(scoreRes.data.score) || 0,
-      readability: String(calculateReadability(correctedText)),
+
+      readability: String(
+        calculateReadability(correctedText)
+      ),
+
       tone: toneRes.data.tone || "Neutral",
+
       createdAt: new Date(),
     });
 
     await essayDoc.save();
 
-    console.log("✅ Essay (ML) saved successfully:", essayDoc._id);
+    console.log(
+      "✅ Essay (ML) saved successfully:",
+      essayDoc._id
+    );
+
     return res.json(essayDoc);
 
   } catch (err) {
-    console.error("❌ Error in analyzeEssayML:", err);
+
+    console.error(
+      "❌ Error in analyzeEssayML:",
+      err
+    );
 
     return res.status(500).json({
       error: "ML-based essay analysis failed.",
