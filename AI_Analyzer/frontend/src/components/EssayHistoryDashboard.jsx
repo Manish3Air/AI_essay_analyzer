@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
+// import axios from "axios";
 import { jsPDF } from "jspdf";
+import api from "../services/api";
 import {
   Area,
   AreaChart,
@@ -294,7 +295,7 @@ export default function EssayHistoryDashboard() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const { data } = await axios.get("/api/essay/history");
+        const { data } = await api.get("/api/essay/history");
         setHistory(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Error loading history:", err);
@@ -586,7 +587,7 @@ export default function EssayHistoryDashboard() {
     const confirmed = window.confirm("Delete this essay from history?");
     if (!confirmed) return;
 
-    await axios.delete(`/api/essay/${id}`);
+    await api.delete(`/api/essay/${id}`);
     setHistory((current) => current.filter((essay, index) => getEssayId(essay, index) !== id));
     setSelectedEssay(null);
   };
@@ -595,7 +596,7 @@ export default function EssayHistoryDashboard() {
     const confirmed = window.confirm("Clear all essay history? This cannot be undone.");
     if (!confirmed) return;
 
-    await axios.delete("/api/essay/history");
+    await api.delete("/api/essay/history");
     setHistory([]);
     setSelectedEssay(null);
   };
