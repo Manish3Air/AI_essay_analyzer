@@ -924,20 +924,20 @@ export default function EssayHistoryDashboard() {
         <ChartCard title="Feedback Decisions" subtitle="Accepted and rejected AI suggestions">
           <div className="mini-stats-grid">
             <div>
+              <span>AI Feedback</span>
+              <strong>{dashboardData.feedbackStats.total}</strong>
+            </div>
+            <div>
+              <span>Pending Review</span>
+              <strong>{dashboardData.feedbackStats.pending}</strong>
+            </div>
+            <div>
               <span>Accepted</span>
               <strong>{dashboardData.feedbackStats.accepted}</strong>
             </div>
             <div>
               <span>Rejected</span>
               <strong>{dashboardData.feedbackStats.rejected}</strong>
-            </div>
-            <div>
-              <span>Acceptance Rate</span>
-              <strong>{dashboardData.feedbackStats.acceptanceRate}%</strong>
-            </div>
-            <div>
-              <span>Pending</span>
-              <strong>{dashboardData.feedbackStats.pending}</strong>
             </div>
           </div>
         </ChartCard>

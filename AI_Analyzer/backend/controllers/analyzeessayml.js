@@ -10,6 +10,7 @@ import { diffWords } from "diff";
 const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 
 function fallbackTitle(text) {
   const firstSentence =
@@ -32,12 +33,12 @@ async function generateEssayTitle(text, fallback = "Untitled Essay") {
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: GROQ_MODEL,
       messages: [
         {
           role: "system",
           content:
-            "Create a concise essay title. Return only the title, no quotes, no punctuation at the end.",
+            "Create a concise essay title of max 8 words. Return only the title, no quotes, no punctuation at the end.",
         },
         {
           role: "user",
@@ -56,6 +57,139 @@ async function generateEssayTitle(text, fallback = "Untitled Essay") {
   } catch (err) {
     console.error("Groq title generation failed:", err.message);
     return fallbackTitle(text) || fallback;
+  }
+}
+
+function extractJsonObject(content) {
+  if (!content) return null;
+  const cleaned = content
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    }
+    throw new Error("Failed to parse JSON from Groq response");
+  }
+}
+
+function fallbackWritingFeedback(grammarIssues) {
+  const annotations = grammarIssues.slice(0, 12).map((issue) => ({
+    type: "correction",
+    original: issue.sentence || "",
+    corrected: issue.corrected || "",
+    note: "Local grammar model detected a sentence-level correction.",
+    accepted: null,
+  }));
+
+  const suggestions = [
+    grammarIssues.length
+      ? `Review ${grammarIssues.length} grammar correction${
+          grammarIssues.length === 1 ? "" : "s"
+        } before finalizing the essay.`
+      : "No grammar corrections were detected; focus on clarity, structure, and stronger examples.",
+    "Read the corrected essay aloud once to catch awkward sentence flow.",
+    "Check that each paragraph has one clear main idea and a direct transition.",
+  ];
+
+  return { annotations, suggestions };
+}
+
+function normalizeWritingFeedback(data, grammarIssues) {
+  const fallback = fallbackWritingFeedback(grammarIssues);
+  const annotations = Array.isArray(data?.annotations)
+    ? data.annotations
+        .map((annotation) => ({
+          type: annotation?.type || "suggestion",
+          original: annotation?.original || "",
+          corrected: annotation?.corrected || "",
+          note: annotation?.note || annotation?.reason || "",
+          accepted: null,
+        }))
+        .filter((annotation) => annotation.note || annotation.original || annotation.corrected)
+    : fallback.annotations;
+
+  const suggestions = Array.isArray(data?.suggestions)
+    ? data.suggestions
+        .map((suggestion) =>
+          typeof suggestion === "string"
+            ? suggestion
+            : suggestion?.text || suggestion?.note || ""
+        )
+        .filter(Boolean)
+        .slice(0, 8)
+    : fallback.suggestions;
+
+  return {
+    annotations: annotations.length ? annotations.slice(0, 20) : fallback.annotations,
+    suggestions: suggestions.length ? suggestions : fallback.suggestions,
+  };
+}
+
+async function generateWritingFeedback(rawText, correctedText, grammarIssues) {
+  if (!groq) return fallbackWritingFeedback(grammarIssues);
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an essay feedback API. Return only valid JSON. Do not use markdown.",
+        },
+        {
+          role: "user",
+          content: `Use the local ML correction output below and produce concise feedback.
+
+Return JSON:
+{
+  "annotations": [
+    {
+      "type": "correction|clarity|structure|style|suggestion",
+      "original": "",
+      "corrected": "",
+      "note": ""
+    }
+  ],
+  "suggestions": []
+}
+
+Rules:
+- Keep annotations actionable.
+- Use grammar issues as evidence.
+- Suggestions should help the student improve the next draft.
+- Do not invent facts.
+
+Original essay:
+${rawText.slice(0, 3500)}
+
+Corrected essay:
+${correctedText.slice(0, 3500)}
+
+Grammar issues:
+${JSON.stringify(grammarIssues.slice(0, 20))}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.35,
+      max_tokens: 1200,
+    });
+
+    const content = completion?.choices?.[0]?.message?.content;
+    const data = extractJsonObject(content);
+    return normalizeWritingFeedback(data, grammarIssues);
+  } catch (err) {
+    console.error("Groq writing feedback failed:", err.message);
+    return fallbackWritingFeedback(grammarIssues);
   }
 }
 
@@ -223,6 +357,12 @@ export const analyzeEssayML = async (req, res) => {
       }
     );
 
+    const writingFeedback = await generateWritingFeedback(
+      text,
+      correctedText,
+      grammarIssues
+    );
+
     
     // ✅ Save To MongoDB
     
@@ -234,11 +374,11 @@ export const analyzeEssayML = async (req, res) => {
 
       corrected_text: correctedText,
 
-      annotations: [],
+      annotations: writingFeedback.annotations,
 
       grammar_issues: grammarIssues,
 
-      suggestions: [],
+      suggestions: writingFeedback.suggestions,
 
       score: Number(scoreRes.data.score) || 0,
 
